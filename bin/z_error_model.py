@@ -6,7 +6,8 @@ from astropy.cosmology import Planck18 as cosmo
 from astropy.io import fits
 
 def read_gamma_data(file_wo_errors='delta_attributes_boring.fits.gz',
-                    file_with_errors='delta_attributes_boring_500.fits.gz'):
+                    file_with_errors='delta_attributes_boring_500.fits.gz',
+                    remove_poly_order=0):
     ''' Create gamma = C1/C0 - 1 from mean continua from mocks 
     '''
 
@@ -15,7 +16,14 @@ def read_gamma_data(file_wo_errors='delta_attributes_boring.fits.gz',
 
     lambda_rest_tab = 10**d0.loglam_rest
     gamma_tab = d0.mean_cont/d1.mean_cont - 1
-    return lambda_rest_tab.astype(float), gamma_tab.astype(float)
+    lambda_rest_tab = lambda_rest_tab.astype(float)
+    gamma_tab = gamma_tab.astype(float)
+
+    if remove_poly_order>0:
+        coeff = np.polyfit(lambda_rest_tab, gamma_tab, remove_poly_order)
+        model = np.polyval(coeff, lambda_rest_tab)
+        gamma_tab -= model 
+    return lambda_rest_tab, gamma_tab 
 
 def read_z_dist_pixels(input_file='delta_attributes_boring.fits.gz', 
     get_xi_weight=False):
@@ -314,7 +322,8 @@ def compute_model(args):
     #-- Read gamma function
     lambda_rest_tab, gamma_tab = read_gamma_data(
         file_wo_errors   = args.meancont_no_errors,
-        file_with_errors = args.meancont_with_errors)
+        file_with_errors = args.meancont_with_errors,
+        remove_poly_order=args.remove_poly_order)
 
     #-- Read pixel weight distribution
     pix_z, pix_dist = read_z_dist_pixels(
@@ -387,6 +396,7 @@ if __name__=='__main__':
     parser.add_argument('--skip-auto', action='store_true', default=False)
     parser.add_argument('--meancont-no-errors', type=str, default='etc/delta_attributes_boring.fits.gz')
     parser.add_argument('--meancont-with-errors', type=str, default='etc/delta_attributes_boring_500.fits.gz')
+    parser.add_argument('--remove-poly-order', type=int, default=0)
     parser.add_argument('--pixel-dist', type=str, default='etc/delta_attributes_boring.fits.gz')
     parser.add_argument('--qso-catalog', type=str, default='etc/zcat_drq.fits.gz')
     parser.add_argument('--xiqq', type=str, default='etc/xi_qq_model_lyacolore.fits')
