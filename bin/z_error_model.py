@@ -10,6 +10,9 @@ def read_gamma_data(file_wo_errors='delta_attributes_boring.fits.gz',
                     remove_poly_order=0):
     ''' Create gamma = C1/C0 - 1 from mean continua from mocks 
     '''
+    print('Reading gamma function from :')
+    print(file_wo_errors)
+    print(file_with_errors) 
 
     d0 = fits.open(file_wo_errors)[3].data
     d1 = fits.open(file_with_errors)[3].data
@@ -25,10 +28,20 @@ def read_gamma_data(file_wo_errors='delta_attributes_boring.fits.gz',
         gamma_tab -= model 
     return lambda_rest_tab, gamma_tab 
 
-def read_z_dist_pixels(input_file='delta_attributes_boring.fits.gz', 
+def read_z_dist_pixels(
+    input_file='delta_attributes_boring.fits.gz', 
     get_xi_weight=False):
     ''' Get weighted pixel distribution 
     '''
+    if input_file is None:
+        print('Pixel weights. No file provided. Assuming uniform weights...')
+        pix_z = np.array([1.5, 4.])
+        pix_dist = np.array([1., 1.])
+        #pix_dist /= np.trapz(pix_dist, x=pix_z)
+        return pix_z, pix_dist
+
+    print('Pixel weights. Reading weights from :')
+    print(input_file)
 
     d0 = fits.open(input_file)[1].data
     
@@ -40,13 +53,25 @@ def read_z_dist_pixels(input_file='delta_attributes_boring.fits.gz',
         pix_dist *= ((1+pix_z)/(1+2.5))**2.9
 
     pix_dist /= np.trapz(pix_dist, x=pix_z)
-    return pix_z.astype(float), pix_dist.astype(float) 
+    pix_z = pix_z.astype(float)
+    pix_dist = pix_dist.astype(float)
+
+    return pix_z, pix_dist
 
 
 def read_z_dist_quasars(input_file='zcat_drq.fits',
     get_xi_weight=False):
     ''' Get normalised redshift distribution of quasars 
     '''
+    if input_file is None:
+        print('QSO distribution. No file provided. Assuming uniform distribution...')
+        qso_z = np.array([1.5, 4.])
+        qso_dist = np.array([1, 1,])
+        return qso_z, qso_dist
+
+    print('QSO distribution. Reading it from :')
+    print(input_file)
+
     q = fits.open(input_file)[1].data
     qso_dist, z_edges = np.histogram(q.Z, bins=100, density=True)
     qso_z = 0.5*(z_edges[:-1]+z_edges[1:])
@@ -57,6 +82,8 @@ def read_z_dist_quasars(input_file='zcat_drq.fits',
     return qso_z.astype(float), qso_dist.astype(float)
 
 def read_xi_qq(input_file='xi_qq_model_lyacolore.fits'):
+    print('xi_QSO(r) is read from :')
+    print(input_file)
     a = fits.open(input_file)[1].data 
     xiqq_r = a.r.astype(float)
     xiqq_xi = a.xi.astype(float)
@@ -103,7 +130,8 @@ def get_cross_fake(zq1, zq2, r_trans, r_parallel,
     #-- Get value of contamination at this rest-frame wavelength
     gam =  np.interp(lambda_rest, lambda_rest_tab, gamma_tab)
 
-    return gam * xi, weight
+    #return gam * xi, weight
+    return gam , weight * (1+xi)
 
 @jit(nopython=True)
 def create_cross(rt_nbins, rp_nbins, rt_max, rp_max,
@@ -217,7 +245,8 @@ def get_auto_fake(zq1, zq2, r_trans, r_parallel, lambda_rest_1,
 
     gamma_2 =  np.interp(lambda_rest_2, lambda_rest_tab, gamma_tab)
     
-    return gamma_1 * gamma_2 * xi, weight
+    #return gamma_1 * gamma_2 * xi, weight
+    return gamma_1 * gamma_2, weight * (1+xi)
 
 @jit(nopython=True, parallel=True)
 def create_auto(rt_nbins, rp_nbins, rt_max, rp_max,
@@ -340,6 +369,7 @@ def compute_model(args):
 
     #-- Compute cross-correlation
     t0 = time.time()
+    print('Computing cross-correlation model...')
     rtc, rpc, xic, wec = create_cross(
         args.rt_nbins, args.rp_nbins, args.rt_max, args.rp_max,
         args.z_qso_min, args.z_qso_max, args.z_nbins,
@@ -359,6 +389,7 @@ def compute_model(args):
     #-- Compute auto-correlation
     if args.skip_auto == False:
         t1 = time.time()
+        print('Computing auto-correlation model...')
         rta, rpa, xia, wea = create_auto(
             args.rt_nbins, args.rp_nbins, args.rt_max, args.rp_max,
             args.z_qso_min, args.z_qso_max, args.z_nbins,
@@ -377,13 +408,22 @@ def compute_model(args):
         data['auto'] = {'rt': rta, 'rp': rpa, 'xi': xia, 'we': wea}
 
     data['parameters'] = vars(args)
+    print('Saving model to :')
+    print(args.output)
     save_to_pickle(data, args.output)
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('--meancont-no-errors', type=str, default=None)
+    parser.add_argument('--meancont-with-errors', type=str, default=None)
+    parser.add_argument('--pixel-dist', type=str, default=None)
+    parser.add_argument('--qso-catalog', type=str, default=None)
+    parser.add_argument('--xiqq', type=str, default='etc/xi_qq_model_lyacolore.fits')
+    parser.add_argument('--output', type=str, default='z_error_model.pkl')
+    
     parser.add_argument('--z-qso-min', type=float, default=2.1)
     parser.add_argument('--z-qso-max', type=float, default=3.5)
-    parser.add_argument('--z-nbins', type=int, default=50)
+    parser.add_argument('--z-nbins', type=int, default=51)
     parser.add_argument('--lambda-rest-min', type=float, default=1040.)
     parser.add_argument('--lambda-rest-max', type=float, default=1200.)
     parser.add_argument('--lambda-obs-min', type=float, default=3600.)
@@ -394,15 +434,9 @@ if __name__=='__main__':
     parser.add_argument('--rt-max', type=float, default=40.)
     parser.add_argument('--rp-max', type=float, default=200.)
     parser.add_argument('--skip-auto', action='store_true', default=False)
-    parser.add_argument('--meancont-no-errors', type=str, default='etc/delta_attributes_boring.fits.gz')
-    parser.add_argument('--meancont-with-errors', type=str, default='etc/delta_attributes_boring_500.fits.gz')
     parser.add_argument('--remove-poly-order', type=int, default=0)
-    parser.add_argument('--pixel-dist', type=str, default='etc/delta_attributes_boring.fits.gz')
-    parser.add_argument('--qso-catalog', type=str, default='etc/zcat_drq.fits.gz')
-    parser.add_argument('--xiqq', type=str, default='etc/xi_qq_model_lyacolore.fits')
-    parser.add_argument('--output', type=str, default='z_error_model.pkl')
     parser.add_argument('--plot', type=str)
-    #args = vars(parser.parse_args())
+    
     args = parser.parse_args()
 
     if not args.plot is None:
